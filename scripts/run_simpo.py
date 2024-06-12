@@ -57,9 +57,10 @@ class SimPOConfig(DPOConfig):
     ref_adapter_name: Optional[str] = field(default=None)
     reference_free: Optional[bool] = field(default=None)
     precompute_ref_log_probs: Optional[bool] = field(default=None)
+    max_target_length: Optional[int] = field(default=None)
 
-    def __post_init__(self):
-        super().__post_init__()
+    # def __post_init__(self):
+    # super().__post_init__()
 
 
 def apply_chat_template(
