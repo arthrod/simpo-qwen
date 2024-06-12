@@ -73,7 +73,7 @@ class SimPOConfig(DPOConfig):
     model_init = None
     label_pad_token_id = None
     disable_dropout = None
-    truncation_mode = None
+    truncation_mode = "keep_end"
     label_smoothing = None
 
 
