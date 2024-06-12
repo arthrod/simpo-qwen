@@ -55,13 +55,10 @@ class SimPOConfig(DPOConfig):
     generate_during_eval: Optional[bool] = field(default=None)
     model_adapter_name: Optional[str] = field(default=None)
     ref_adapter_name: Optional[str] = field(default=None)
-    reference_free: Optional[bool] = field(default=None)
-    precompute_ref_log_probs: Optional[bool] = field(default=None)
+    reference_free: Optional[bool] = field(default=False)
+    precompute_ref_log_probs: Optional[bool] = field(default=False)
 
     ref_model = None
-    # ref_model_init_kwargs = None
-    # model_adapter_name = None
-    # ref_adapter_name = None
     padding_value = None
     max_target_length = None
     dataset_num_proc = None
@@ -71,10 +68,10 @@ class SimPOConfig(DPOConfig):
     compute_metrics = None
     eval_dataset = None
     model_init = None
-    label_pad_token_id = None
-    disable_dropout = None
+    label_pad_token_id = -100
+    disable_dropout = True
     truncation_mode = "keep_end"
-    label_smoothing = None
+    label_smoothing = 0
 
 
 # def __post_init__(self):
