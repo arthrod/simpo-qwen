@@ -74,6 +74,7 @@ class SimPOConfig(DPOConfig):
     label_pad_token_id = None
     disable_dropout = None
     truncation_mode = None
+    label_smoothing = None
 
 
 # def __post_init__(self):
