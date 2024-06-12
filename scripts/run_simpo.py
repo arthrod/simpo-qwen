@@ -51,7 +51,17 @@ class SimPOConfig(DPOConfig):
         default=0.5,
         metadata={"help": "The target reward margin term in SimPO loss."},
     )
-    super.__init__()
+
+    # ref_model_init_kwargs = None
+    # generate_during_eval = None
+    # model_adapter_name = None
+    # ref_adapter_name = None
+    # reference_free = None
+    # precompute_ref_log_probs = None
+    def __init__(self, *args, **kwargs):
+        # Call the base class constructor
+        super().__init__(*args, **kwargs)
+        # Additional initialization if needed
 
 
 def apply_chat_template(
