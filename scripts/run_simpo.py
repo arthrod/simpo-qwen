@@ -58,19 +58,19 @@ class SimPOConfig(DPOConfig):
     reference_free: Optional[bool] = field(default=None)
     precompute_ref_log_probs: Optional[bool] = field(default=None)
 
-    ref_model = field(default=None)
-    # ref_model_init_kwargs = field(default=None)
-    # model_adapter_name = field(default=None)
-    # ref_adapter_name = field(default=None)
-    padding_value = field(default=None)
-    max_target_length = field(default=None)
-    dataset_num_proc = field(default=None)
-    callbacks = field(default=None)
-    optimizers = field(default=(None, None))
-    preprocess_logits_for_metrics = field(default=None)
-    compute_metrics = field(default=None)
-    eval_dataset = field(default=None)
-    model_init = field(default=None)
+    ref_model = None
+    # ref_model_init_kwargs = None
+    # model_adapter_name = None
+    # ref_adapter_name = None
+    padding_value = None
+    max_target_length = None
+    dataset_num_proc = None
+    callbacks = None
+    optimizers = (None, None)
+    preprocess_logits_for_metrics = None
+    compute_metrics = None
+    eval_dataset = None
+    model_init = None
 
 
 # def __post_init__(self):
