@@ -72,6 +72,7 @@ class SimPOConfig(DPOConfig):
     eval_dataset = None
     model_init = None
     label_pad_token_id = None
+    disable_dropout = None
 
 
 # def __post_init__(self):
