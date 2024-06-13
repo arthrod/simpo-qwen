@@ -9,7 +9,7 @@ dataset_mixer:
 dataset_splits:
 - train
 - test
-preprocessing_num_workers: 12
+preprocessing_num_workers: 6
 
 # SimPOTrainer arguments
 bf16: true
