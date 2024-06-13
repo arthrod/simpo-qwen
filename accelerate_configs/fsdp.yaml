@@ -8,11 +8,13 @@ fsdp_config:
   fsdp_backward_prefetch: BACKWARD_PRE
   fsdp_cpu_ram_efficient_loading: true
   fsdp_forward_prefetch: true
-  fsdp_offload_params: false
+  fsdp_offload_params: true  # Enabling offload params to CPU
   fsdp_sharding_strategy: FULL_SHARD
   fsdp_state_dict_type: SHARDED_STATE_DICT
   fsdp_sync_module_states: true
   fsdp_use_orig_params: true
+  fsdp_activation_checkpointing: true  # Enabling activation checkpointing for memory efficiency
+  fsdp_activation_checkpointing_policy: TRANSFORMER_BASED  # Ensuring checkpointing policy is set
 machine_rank: 0
 main_training_function: main
 mixed_precision: bf16
