@@ -72,6 +72,7 @@ class SimPOConfig(DPOConfig):
     disable_dropout = True
     truncation_mode = "keep_end"
     label_smoothing = 0
+    sync_ref_model = None
 
 
 # def __post_init__(self):
