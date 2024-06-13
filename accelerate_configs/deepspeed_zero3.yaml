@@ -2,14 +2,28 @@ compute_environment: LOCAL_MACHINE
 debug: false
 deepspeed_config:
   deepspeed_multinode_launcher: standard
-  offload_optimizer_device: cpu
-  offload_param_device: cpu
+  zero_optimization:
+    stage: 3
+    offload_optimizer: {
+      device: "nvme",
+      nvme_path: "/mnt",
+      pin_memory: true,
+      buffer_count: 5,
+      buffer_size: 1e8,
+      max_in_cpu: 1e9
+    }
+    offload_param: {
+      device: "nvme",
+      nvme_path: "/mnt",
+      buffer_count: 5,
+      buffer_size: 1e8,
+      max_in_cpu: 1e9
+    }
+    prefetch_bucket_size: 1.509949e+07
+    reduce_bucket_size: 1.677722e+07
+    param_persistence_threshold: 4.096000e+04
   zero3_init_flag: true
   zero3_save_16bit_model: true
-  zero_stage: 3
-  zero_optimization:
-    reduce_bucket_size: 1e7
-    stage3_prefetch_bucket_size: 1e7
 distributed_type: DEEPSPEED
 downcast_bf16: 'no'
 machine_rank: 0
