@@ -33,8 +33,8 @@ num_train_epochs: 1
 optim: adamw_torch
 output_dir: outputs/llama-3-8b-instruct-simpo
 run_name: llama-3-8b-instruct-simpo
-per_device_train_batch_size: 2
-per_device_eval_batch_size: 4
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 2
 push_to_hub: false
 save_strategy: "steps"
 save_steps: 1000000
