@@ -12,7 +12,7 @@ dataset_splits:
 preprocessing_num_workers: 6
 
 # SimPOTrainer arguments
-bf16: true
+# bf16: true
 fp16: true
 beta: 2.5
 gamma: 1.4
