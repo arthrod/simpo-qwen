@@ -342,21 +342,6 @@ def main():
         max_prompt_length=training_args.max_prompt_length,
         peft_config=get_peft_config(model_args),
         loss_type=training_args.loss_type,
-        bf16=False,
-        fp16=True,
-        fp16_backend="auto",
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
-        gradient_accumulation_steps=1,
-        dataloader_pin_memory=True,
-        dataloader_num_workers=0,
-        zero_optimization={
-            "stage": 3,
-            "offload_optimizer": {"device": "cpu", "pin_memory": True},
-            "offload_param": {"device": "cpu", "pin_memory": True},
-            "reduce_bucket_size": 1e7,
-            "stage3_prefetch_bucket_size": 1e7,
-        },
     )
 
     ###############
