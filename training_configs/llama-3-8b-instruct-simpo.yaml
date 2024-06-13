@@ -9,17 +9,16 @@ dataset_mixer:
 dataset_splits:
 - train
 - test
-preprocessing_num_workers: 4
+preprocessing_num_workers: 12
 
 # SimPOTrainer arguments
 bf16: true
-# fp16: true
 beta: 2.5
 gamma: 1.4
 do_eval: true
 evaluation_strategy: steps
 eval_steps: 400
-gradient_accumulation_steps: 16
+gradient_accumulation_steps: 8
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: False
@@ -34,13 +33,11 @@ num_train_epochs: 1
 optim: adamw_torch
 output_dir: outputs/llama-3-8b-instruct-simpo
 run_name: llama-3-8b-instruct-simpo
-per_device_train_batch_size: 1
-per_device_eval_batch_size: 1
-per_gpu_train_batch_size: 1
-per_gpu_eval_batch_size: 1
+per_device_train_batch_size: 2
+per_device_eval_batch_size: 4
 push_to_hub: false
 save_strategy: "steps"
-save_steps: 100000
+save_steps: 1000000
 report_to:
 - wandb
 save_total_limit: 20
