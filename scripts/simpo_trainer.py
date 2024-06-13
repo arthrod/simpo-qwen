@@ -28,6 +28,10 @@ class SimPOTrainer(DPOTrainer):
             The losses tensor contains the SimPO loss for each example in the batch.
             The chosen_rewards and rejected_rewards tensors contain the rewards for the chosen and rejected responses, respectively.
         """
+        # Ensure the log probabilities are tensors
+        policy_chosen_logps = torch.tensor(policy_chosen_logps, dtype=torch.float32)
+        policy_rejected_logps = torch.tensor(policy_rejected_logps, dtype=torch.float32)
+
         pi_logratios = policy_chosen_logps - policy_rejected_logps
         gamma_logratios = self.gamma / self.beta
         pi_logratios = pi_logratios.to(self.accelerator.device)
@@ -98,11 +102,12 @@ class SimPOTrainer(DPOTrainer):
             label_pad_token_id=self.label_pad_token_id,
         )
 
-        chosen_logps = all_logps[:len_chosen]
-        rejected_logps = all_logps[len_chosen:]
+        # Ensure the outputs are tensors
+        chosen_logps = torch.tensor(all_logps[:len_chosen], dtype=torch.float32)
+        rejected_logps = torch.tensor(all_logps[len_chosen:], dtype=torch.float32)
 
-        chosen_logits = all_logits[:len_chosen]
-        rejected_logits = all_logits[len_chosen:]
+        chosen_logits = torch.tensor(all_logits[:len_chosen], dtype=torch.float32)
+        rejected_logits = torch.tensor(all_logits[len_chosen:], dtype=torch.float32)
 
         return (chosen_logps, rejected_logps, chosen_logits, rejected_logits)
 
