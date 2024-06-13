@@ -1,9 +1,9 @@
-
 from trl import DPOTrainer
 import torch
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 import torch.nn.functional as F
 import torch.nn as nn
+
 
 class SimPOTrainer(DPOTrainer):
 
@@ -29,7 +29,7 @@ class SimPOTrainer(DPOTrainer):
             The chosen_rewards and rejected_rewards tensors contain the rewards for the chosen and rejected responses, respectively.
         """
         pi_logratios = policy_chosen_logps - policy_rejected_logps
-        gamma_logratios = self.gamma / self.beta 
+        gamma_logratios = self.gamma / self.beta
         pi_logratios = pi_logratios.to(self.accelerator.device)
         logits = pi_logratios - gamma_logratios
 
@@ -45,14 +45,20 @@ class SimPOTrainer(DPOTrainer):
                 f"Unknown loss type: {self.loss_type}. Should be one of ['sigmoid', 'hinge']"
             )
 
-        chosen_rewards = self.beta * policy_chosen_logps.to(self.accelerator.device).detach()
-        rejected_rewards = self.beta * policy_rejected_logps.to(self.accelerator.device).detach()
+        chosen_rewards = (
+            self.beta * policy_chosen_logps.to(self.accelerator.device).detach()
+        )
+        rejected_rewards = (
+            self.beta * policy_rejected_logps.to(self.accelerator.device).detach()
+        )
 
         return losses, chosen_rewards, rejected_rewards
-    
+
     def concatenated_forward(
         self, model: nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]
-    ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
+    ) -> Tuple[
+        torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor
+    ]:
         """Run the given model on the given batch of inputs, concatenating the chosen and rejected inputs together.
 
         We do this to avoid doing two forward passes, because it's faster for FSDP.
@@ -69,7 +75,9 @@ class SimPOTrainer(DPOTrainer):
         model_kwargs = (
             {
                 "labels": concatenated_batch["concatenated_labels"],
-                "decoder_input_ids": concatenated_batch.pop("concatenated_decoder_input_ids", None),
+                "decoder_input_ids": concatenated_batch.pop(
+                    "concatenated_decoder_input_ids", None
+                ),
             }
             if self.is_encoder_decoder
             else {}
@@ -85,7 +93,7 @@ class SimPOTrainer(DPOTrainer):
         all_logps = self.get_batch_logps(
             all_logits,
             concatenated_batch["concatenated_labels"],
-            average_log_prob=True,
+            # average_log_prob=True,
             is_encoder_decoder=self.is_encoder_decoder,
             label_pad_token_id=self.label_pad_token_id,
         )
@@ -115,8 +123,7 @@ class SimPOTrainer(DPOTrainer):
         ) = self.concatenated_forward(model, batch)
 
         losses, chosen_rewards, rejected_rewards = self.simpo_loss(
-            policy_chosen_logps,
-            policy_rejected_logps
+            policy_chosen_logps, policy_rejected_logps
         )
         reward_accuracies = (chosen_rewards > rejected_rewards).float()
 
@@ -124,10 +131,14 @@ class SimPOTrainer(DPOTrainer):
         metrics[f"{prefix}rewards/chosen"] = chosen_rewards.mean().cpu()
         metrics[f"{prefix}rewards/rejected"] = rejected_rewards.mean().cpu()
         metrics[f"{prefix}rewards/accuracies"] = reward_accuracies.mean().cpu()
-        metrics[f"{prefix}rewards/margins"] = (chosen_rewards - rejected_rewards).mean().cpu()
+        metrics[f"{prefix}rewards/margins"] = (
+            (chosen_rewards - rejected_rewards).mean().cpu()
+        )
         metrics[f"{prefix}logps/rejected"] = policy_rejected_logps.detach().mean().cpu()
         metrics[f"{prefix}logps/chosen"] = policy_chosen_logps.detach().mean().cpu()
-        metrics[f"{prefix}logits/rejected"] = policy_rejected_logits.detach().mean().cpu()
+        metrics[f"{prefix}logits/rejected"] = (
+            policy_rejected_logits.detach().mean().cpu()
+        )
         metrics[f"{prefix}logits/chosen"] = policy_chosen_logits.detach().mean().cpu()
 
         return losses.mean(), metrics
