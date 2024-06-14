@@ -16,7 +16,13 @@ class SimPOTrainer(DPOTrainer):
         self,
         policy_chosen_logps: torch.FloatTensor,
         policy_rejected_logps: torch.FloatTensor,
-    ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
+    ) -> Tuple[
+        torch.FloatTensor,
+        torch.FloatTensor,
+        torch.FloatTensor,
+        torch.FloatTensor,
+        torch.FloatTensor,
+    ]:
         """Compute the SimPO loss for a batch of policy model log probabilities.
 
         Args:
@@ -56,12 +62,19 @@ class SimPOTrainer(DPOTrainer):
         abs_diff = torch.abs(policy_chosen_logps - policy_rejected_logps)
 
         # Apply a weight based on the absolute difference
-        weight = 1 / (abs_diff + 1e-6)  # Add a small constant to avoid division by zero
+        # (0, 1]
+        weight = 1 / (abs_diff + 1)  # Add constant to avoid division by zero
 
         # Multiply the losses by the weight
-        losses = losses * weight
+        losses = losses**weight
 
-        return losses, chosen_rewards, rejected_rewards
+        return (
+            losses,
+            weight,
+            abs_diff,
+            chosen_rewards,
+            rejected_rewards,
+        )
 
     def concatenated_forward(
         self, model: nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]
@@ -133,12 +146,18 @@ class SimPOTrainer(DPOTrainer):
             policy_rejected_logits,
         ) = self.concatenated_forward(model, batch)
 
-        losses, chosen_rewards, rejected_rewards = self.simpo_loss(
-            policy_chosen_logps, policy_rejected_logps
-        )
+        (
+            losses,
+            weight,
+            abs_diff,
+            chosen_rewards,
+            rejected_rewards,
+        ) = self.simpo_loss(policy_chosen_logps, policy_rejected_logps)
         reward_accuracies = (chosen_rewards > rejected_rewards).float()
 
         prefix = "eval_" if train_eval == "eval" else ""
+        metrics[f"{prefix}weight"] = weight.mean().cpu()
+        metrics[f"{prefix}abs_diff"] = abs_diff.mean().cpu()
         metrics[f"{prefix}rewards/chosen"] = chosen_rewards.mean().cpu()
         metrics[f"{prefix}rewards/rejected"] = rejected_rewards.mean().cpu()
         metrics[f"{prefix}rewards/accuracies"] = reward_accuracies.mean().cpu()
