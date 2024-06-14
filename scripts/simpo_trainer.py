@@ -52,6 +52,15 @@ class SimPOTrainer(DPOTrainer):
             self.beta * policy_rejected_logps.to(self.accelerator.device).detach()
         )
 
+        # Calculate the absolute difference between chosen and rejected log probabilities
+        abs_diff = torch.abs(policy_chosen_logps - policy_rejected_logps)
+
+        # Apply a weight based on the absolute difference
+        weight = 1 / (abs_diff + 1e-6)  # Add a small constant to avoid division by zero
+
+        # Multiply the losses by the weight
+        losses = losses * weight
+
         return losses, chosen_rewards, rejected_rewards
 
     def concatenated_forward(

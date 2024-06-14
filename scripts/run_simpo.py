@@ -75,10 +75,6 @@ class SimPOConfig(DPOConfig):
     sync_ref_model = None
 
 
-# def __post_init__(self):
-# super().__post_init__()
-
-
 def apply_chat_template(
     example,
     tokenizer,
@@ -216,6 +212,8 @@ def main():
             "prompt",
             "completion",
             "label",
+            "score_chosen",
+            "score_rejected",
         ],
         # seed=training_args.seed,
     )
