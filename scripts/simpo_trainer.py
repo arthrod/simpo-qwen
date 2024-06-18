@@ -67,7 +67,7 @@ class SimPOTrainer(DPOTrainer):
         weight = 1 / (abs_diff + 1)  # Add constant to avoid division by zero
 
         # Multiply the losses by the weight
-        weighted_losses = original_losses * weight
+        weighted_losses = torch.pow(weight)
 
         return (
             weighted_losses,
@@ -130,7 +130,14 @@ class SimPOTrainer(DPOTrainer):
         chosen_logits = all_logits[:len_chosen]
         rejected_logits = all_logits[len_chosen:]
 
-        return (chosen_logps, rejected_logps, chosen_logits, rejected_logits)
+        return (
+            chosen_logps,
+            rejected_logps,
+            chosen_logits,
+            rejected_logits,
+            all_logps_1,
+            all_logps_2,
+        )
 
     def get_batch_loss_metrics(
         self,
@@ -146,6 +153,8 @@ class SimPOTrainer(DPOTrainer):
             policy_rejected_logps,
             policy_chosen_logits,
             policy_rejected_logits,
+            all_logps_1,
+            all_logps_2,
         ) = self.concatenated_forward(model, batch)
 
         (
@@ -160,19 +169,56 @@ class SimPOTrainer(DPOTrainer):
 
         prefix = "eval_" if train_eval == "eval" else ""
         metrics[f"{prefix}original_losses"] = original_losses.mean().cpu()
+        metrics[f"{prefix}original_losses_values"] = original_losses.cpu().tolist()
+
         metrics[f"{prefix}weight"] = weight.mean().cpu()
+        metrics[f"{prefix}weight_values"] = weight.cpu().tolist()
+
         metrics[f"{prefix}abs_diff"] = abs_diff.mean().cpu()
+        metrics[f"{prefix}abs_diff_values"] = abs_diff.cpu().tolist()
+
         metrics[f"{prefix}rewards/chosen"] = chosen_rewards.mean().cpu()
+        metrics[f"{prefix}rewards/chosen_values"] = chosen_rewards.cpu().tolist()
+
         metrics[f"{prefix}rewards/rejected"] = rejected_rewards.mean().cpu()
+        metrics[f"{prefix}rewards/rejected_values"] = rejected_rewards.cpu().tolist()
+
         metrics[f"{prefix}rewards/accuracies"] = reward_accuracies.mean().cpu()
+        metrics[f"{prefix}rewards/accuracies_values"] = reward_accuracies.cpu().tolist()
+
         metrics[f"{prefix}rewards/margins"] = (
             (chosen_rewards - rejected_rewards).mean().cpu()
         )
+        metrics[f"{prefix}rewards/margins_values"] = (
+            (chosen_rewards - rejected_rewards).cpu().tolist()
+        )
+
         metrics[f"{prefix}logps/rejected"] = policy_rejected_logps.detach().mean().cpu()
+        metrics[f"{prefix}logps/rejected_values"] = (
+            policy_rejected_logps.detach().cpu().tolist()
+        )
+
         metrics[f"{prefix}logps/chosen"] = policy_chosen_logps.detach().mean().cpu()
+        metrics[f"{prefix}logps/chosen_values"] = (
+            policy_chosen_logps.detach().cpu().tolist()
+        )
+
         metrics[f"{prefix}logits/rejected"] = (
             policy_rejected_logits.detach().mean().cpu()
         )
+        metrics[f"{prefix}logits/rejected_values"] = (
+            policy_rejected_logits.detach().cpu().tolist()
+        )
+
         metrics[f"{prefix}logits/chosen"] = policy_chosen_logits.detach().mean().cpu()
+        metrics[f"{prefix}logits/chosen_values"] = (
+            policy_chosen_logits.detach().cpu().tolist()
+        )
+
+        metrics[f"{prefix}all_logps_1"] = all_logps_1.detach().mean().cpu()
+        metrics[f"{prefix}all_logps_1_values"] = all_logps_1.detach().cpu().tolist()
+
+        metrics[f"{prefix}all_logps_2"] = all_logps_2.detach().mean().cpu()
+        metrics[f"{prefix}all_logps_2_values"] = all_logps_2.detach().cpu().tolist()
 
         return weighted_losses.mean(), metrics
