@@ -1,3 +1,4 @@
+# simpo_trainer.py
 from trl import DPOTrainer
 import torch
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
@@ -40,12 +41,12 @@ class SimPOTrainer(DPOTrainer):
         logits = pi_logratios - gamma_logratios
 
         if self.loss_type == "sigmoid":
-            losses = (
+            original_losses = (
                 -F.logsigmoid(self.beta * logits) * (1 - self.label_smoothing)
                 - F.logsigmoid(-self.beta * logits) * self.label_smoothing
             )
         elif self.loss_type == "hinge":
-            losses = torch.relu(1 - self.beta * logits)
+            original_losses = torch.relu(1 - self.beta * logits)
         else:
             raise ValueError(
                 f"Unknown loss type: {self.loss_type}. Should be one of ['sigmoid', 'hinge']"
@@ -59,17 +60,18 @@ class SimPOTrainer(DPOTrainer):
         )
 
         # Calculate the absolute difference between chosen and rejected log probabilities
-        abs_diff = torch.abs(policy_chosen_logps - policy_rejected_logps)
+        abs_diff = torch.abs(pi_logratios)
 
         # Apply a weight based on the absolute difference
         # (0, 1]
         weight = 1 / (abs_diff + 1)  # Add constant to avoid division by zero
 
         # Multiply the losses by the weight
-        losses = losses**weight
+        weighted_losses = torch.pow(weight)
 
         return (
-            losses,
+            weighted_losses,
+            original_losses,
             weight,
             abs_diff,
             chosen_rewards,
@@ -147,7 +149,8 @@ class SimPOTrainer(DPOTrainer):
         ) = self.concatenated_forward(model, batch)
 
         (
-            losses,
+            weighted_losses,
+            original_losses,
             weight,
             abs_diff,
             chosen_rewards,
@@ -156,6 +159,7 @@ class SimPOTrainer(DPOTrainer):
         reward_accuracies = (chosen_rewards > rejected_rewards).float()
 
         prefix = "eval_" if train_eval == "eval" else ""
+        metrics[f"{prefix}original_losses"] = original_losses.mean().cpu()
         metrics[f"{prefix}weight"] = weight.mean().cpu()
         metrics[f"{prefix}abs_diff"] = abs_diff.mean().cpu()
         metrics[f"{prefix}rewards/chosen"] = chosen_rewards.mean().cpu()
@@ -171,4 +175,4 @@ class SimPOTrainer(DPOTrainer):
         )
         metrics[f"{prefix}logits/chosen"] = policy_chosen_logits.detach().mean().cpu()
 
-        return losses.mean(), metrics
+        return weighted_losses.mean(), metrics
