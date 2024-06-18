@@ -124,6 +124,10 @@ class SimPOTrainer(DPOTrainer):
 
         all_logps = all_logps_1 / all_logps_2
 
+        all_logps_1 = all_logps_1.float()
+        all_logps_2 = all_logps_2.float()
+        all_logps = all_logps.float()
+
         chosen_logps = all_logps[:len_chosen]
         rejected_logps = all_logps[len_chosen:]
 
