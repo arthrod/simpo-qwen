@@ -67,7 +67,7 @@ class SimPOTrainer(DPOTrainer):
         weight = 1 / (abs_diff + 1)  # Add constant to avoid division by zero
 
         # Multiply the losses by the weight
-        weighted_losses = torch.pow(weight)
+        weighted_losses = original_losses * weight
 
         return (
             weighted_losses,
