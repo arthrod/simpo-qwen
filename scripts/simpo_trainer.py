@@ -124,9 +124,9 @@ class SimPOTrainer(DPOTrainer):
 
         all_logps = all_logps_1 / all_logps_2
 
-        all_logps_1 = all_logps_1.float()
-        all_logps_2 = all_logps_2.float()
-        all_logps = all_logps.float()
+        # all_logps_1 = all_logps_1.float()
+        # all_logps_2 = all_logps_2.float()
+        # all_logps = all_logps.float()
 
         chosen_logps = all_logps[:len_chosen]
         rejected_logps = all_logps[len_chosen:]
@@ -219,14 +219,14 @@ class SimPOTrainer(DPOTrainer):
             policy_chosen_logits.detach().cpu().tolist()
         )
 
-        metrics[f"{prefix}all_logps_1"] = all_logps_1.detach().float().mean().cpu()
-        metrics[f"{prefix}all_logps_1_values"] = (
-            all_logps_1.detach().float().cpu().tolist()
-        )
+        # metrics[f"{prefix}all_logps_1"] = all_logps_1.detach().float().mean().cpu()
+        # metrics[f"{prefix}all_logps_1_values"] = (
+        #     all_logps_1.detach().float().cpu().tolist()
+        # )
 
-        metrics[f"{prefix}all_logps_2"] = all_logps_2.detach().float().mean().cpu()
-        metrics[f"{prefix}all_logps_2_values"] = (
-            all_logps_2.detach().float().cpu().tolist()
-        )
+        # metrics[f"{prefix}all_logps_2"] = all_logps_2.detach().float().mean().cpu()
+        # metrics[f"{prefix}all_logps_2_values"] = (
+        #     all_logps_2.detach().float().cpu().tolist()
+        # )
 
         return weighted_losses.mean(), metrics
