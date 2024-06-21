@@ -86,81 +86,33 @@ def apply_chat_template(
 ):
     if change_template == "mistral":
         tokenizer.chat_template = MISTRAL_CHAT_TEMPLATE
-    if task in ["sft", "generation"]:
-        messages = example["messages"]
-        # We add an empty system message if there is none
-        if auto_insert_empty_system_msg:
-            maybe_insert_system_message(messages, tokenizer)
-        example["text"] = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True if task == "generation" else False,
-        )
-    elif task == "rm":
+    
+    if task == "simpo":
         if all(k in example.keys() for k in ("chosen", "rejected")):
-            chosen_messages = example["chosen"]
-            rejected_messages = example["rejected"]
-            # We add an empty system message if there is none
-            if auto_insert_empty_system_msg:
-                maybe_insert_system_message(chosen_messages, tokenizer)
-                maybe_insert_system_message(rejected_messages, tokenizer)
+            # Ensure chosen and rejected are in the correct format
+            chosen = example["chosen"] if isinstance(example["chosen"], list) else [{"role": "assistant", "content": example["chosen"]}]
+            rejected = example["rejected"] if isinstance(example["rejected"], list) else [{"role": "assistant", "content": example["rejected"]}]
 
-            example["text_chosen"] = tokenizer.apply_chat_template(
-                chosen_messages, tokenize=False
-            )
-            example["text_rejected"] = tokenizer.apply_chat_template(
-                rejected_messages, tokenize=False
-            )
+            # Extract prompt if available, otherwise use an empty list
+            prompt = example.get("prompt", [])
+            if isinstance(prompt, str):
+                prompt = [{"role": "user", "content": prompt}]
+
+            # Prepend a system message if auto_insert_empty_system_msg is True
+            if auto_insert_empty_system_msg and (not prompt or prompt[0]["role"] != "system"):
+                prompt.insert(0, {"role": "system", "content": ""})
+
+            example["text_prompt"] = tokenizer.apply_chat_template(prompt, tokenize=False)
+            example["text_chosen"] = tokenizer.apply_chat_template(chosen, tokenize=False)
+            example["text_rejected"] = tokenizer.apply_chat_template(rejected, tokenize=False)
+
+            # Remove leading BOS token if present
+            for key in ["text_chosen", "text_rejected"]:
+                if example[key].startswith(tokenizer.bos_token):
+                    example[key] = example[key][len(tokenizer.bos_token):]
         else:
             raise ValueError(
-                f"Could not format example as dialogue for `rm` task! Require `[chosen, rejected]` keys but found {list(example.keys())}"
-            )
-    elif task == "simpo":
-        if all(k in example.keys() for k in ("chosen", "rejected")):
-            if not is_openai_format(example["chosen"]) or not is_openai_format(
-                example["rejected"]
-            ):
-                raise ValueError(
-                    f"Could not format example as dialogue for `{task}` task! Require OpenAI format for all messages"
-                )
-
-            # For DPO/ORPO, the inputs are triples of (prompt, chosen, rejected), where `chosen` and `rejected` are the final turn of a dialogue
-            # We therefore need to extract the N-1 turns to form the prompt
-            if "prompt" in example and is_openai_format(example["prompt"]):
-                prompt_messages = example["prompt"]
-                chosen_messages = example["chosen"]
-                rejected_messages = example["rejected"]
-            else:
-                prompt_messages = example["chosen"][:-1]
-                # Now we extract the final turn to define chosen/rejected responses
-                chosen_messages = example["chosen"][-1:]
-                rejected_messages = example["rejected"][-1:]
-
-            # Prepend a system message if the first message is not a system message
-            if auto_insert_empty_system_msg:
-                maybe_insert_system_message(prompt_messages, tokenizer)
-
-            example["text_prompt"] = tokenizer.apply_chat_template(
-                prompt_messages, tokenize=False
-            )
-            example["text_chosen"] = tokenizer.apply_chat_template(
-                chosen_messages, tokenize=False
-            )
-            if example["text_chosen"].startswith(tokenizer.bos_token):
-                example["text_chosen"] = example["text_chosen"][
-                    len(tokenizer.bos_token) :
-                ]
-            example["text_rejected"] = tokenizer.apply_chat_template(
-                rejected_messages, tokenize=False
-            )
-            if example["text_rejected"].startswith(tokenizer.bos_token):
-                example["text_rejected"] = example["text_rejected"][
-                    len(tokenizer.bos_token) :
-                ]
-        else:
-            raise ValueError(
-                f"Could not format example as dialogue for `{task}` task! Require either the "
-                f"`[chosen, rejected]` or `[prompt, chosen, rejected]` keys but found {list(example.keys())}"
+                f"Could not format example for `simpo` task! Require `[chosen, rejected]` keys but found {list(example.keys())}"
             )
     else:
         raise ValueError(
@@ -230,6 +182,7 @@ def main():
     data_args.truncation_side = (
         "left"  # Truncate from left to ensure we don't lose labels in final turn
     )
+    model_args.tokenizer_name_or_path = "meta-llama/Llama-2-7b-hf"
     tokenizer = get_tokenizer(model_args, data_args)
 
     if "mistral" in model_args.model_name_or_path.lower():
@@ -283,7 +236,7 @@ def main():
 
     model_kwargs = dict(
         revision=model_args.model_revision,
-        trust_remote_code=model_args.trust_remote_code,
+        trust_remote_code=True,
         use_flash_attention_2=model_args.use_flash_attention_2,
         torch_dtype=torch_dtype,
         use_cache=False if training_args.gradient_checkpointing else True,

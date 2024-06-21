@@ -108,10 +108,6 @@ class SimPOTrainer(DPOTrainer):
             else {}
         )
 
-        print("Input IDs shape:", concatenated_batch["concatenated_input_ids"].shape)
-        print("Attention Mask shape:", concatenated_batch["concatenated_attention_mask"].shape)
-        print("Max value in Input IDs:", torch.max(concatenated_batch["concatenated_input_ids"]))
-
         all_logits = model(
             concatenated_batch["concatenated_input_ids"],
             attention_mask=concatenated_batch["concatenated_attention_mask"],
