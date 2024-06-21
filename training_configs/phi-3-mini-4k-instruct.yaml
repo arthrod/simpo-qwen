@@ -1,5 +1,5 @@
 # Model arguments
-model_name_or_path: google/flan-t5-small
+model_name_or_path: microsoft/Phi-3-mini-4k-instruct
 torch_dtype: null
 use_flash_attention_2: true
 
@@ -31,8 +31,8 @@ max_length: 2048
 max_prompt_length: 1800
 num_train_epochs: 1
 optim: adamw_torch
-output_dir: outputs/flan-t5-small
-run_name: flan-t5-small
+output_dir: outputs/phi-3-mini-4k-instruct
+run_name: phi-3-mini-4k-instruct
 per_device_train_batch_size: 2
 per_device_eval_batch_size: 4
 push_to_hub: false
