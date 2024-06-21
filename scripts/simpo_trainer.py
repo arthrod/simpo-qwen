@@ -65,7 +65,8 @@ class SimPOTrainer(DPOTrainer):
 
         # Apply a weight based on the absolute difference
         # (0, 1]
-        weight = 1  # Add constant to avoid division by zero
+        # weight = 1 / (abs_diff + 1)  # Add constant to avoid division by zero
+        weight = torch.ones_like(original_losses)
 
         # Multiply the losses by the weight
         weighted_losses = original_losses * weight
