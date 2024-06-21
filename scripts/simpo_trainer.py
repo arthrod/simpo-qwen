@@ -95,6 +95,9 @@ class SimPOTrainer(DPOTrainer):
             padding_value=self.padding_value,
             device=self.accelerator.device,
         )
+    
+        # Convert input_ids to Long type
+        concatenated_batch["concatenated_input_ids"] = concatenated_batch["concatenated_input_ids"].long()
         len_chosen = batch["chosen_labels"].shape[0]
 
         model_kwargs = (
