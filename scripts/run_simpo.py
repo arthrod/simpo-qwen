@@ -86,74 +86,33 @@ def apply_chat_template(
 ):
     if change_template == "mistral":
         tokenizer.chat_template = MISTRAL_CHAT_TEMPLATE
-    if task in ["sft", "generation"]:
-        messages = example["messages"]
-        # We add an empty system message if there is none
-        if auto_insert_empty_system_msg:
-            maybe_insert_system_message(messages, tokenizer)
-        example["text"] = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True if task == "generation" else False,
-        )
-    elif task == "rm":
+    
+    if task == "simpo":
         if all(k in example.keys() for k in ("chosen", "rejected")):
-            chosen_messages = example["chosen"]
-            rejected_messages = example["rejected"]
-            # We add an empty system message if there is none
-            if auto_insert_empty_system_msg:
-                maybe_insert_system_message(chosen_messages, tokenizer)
-                maybe_insert_system_message(rejected_messages, tokenizer)
+            # Ensure chosen and rejected are in the correct format
+            chosen = example["chosen"] if isinstance(example["chosen"], list) else [{"role": "assistant", "content": example["chosen"]}]
+            rejected = example["rejected"] if isinstance(example["rejected"], list) else [{"role": "assistant", "content": example["rejected"]}]
 
-            example["text_chosen"] = tokenizer.apply_chat_template(
-                chosen_messages, tokenize=False
-            )
-            example["text_rejected"] = tokenizer.apply_chat_template(
-                rejected_messages, tokenize=False
-            )
-        else:
-            raise ValueError(
-                f"Could not format example as dialogue for `rm` task! Require `[chosen, rejected]` keys but found {list(example.keys())}"
-            )
-    elif task == "simpo":
-        if all(k in example.keys() for k in ("chosen", "rejected")):
-            if not is_openai_format(example["chosen"]) or not is_openai_format(
-                example["rejected"]
-            ):
-                raise ValueError(
-                    f"Could not format example as dialogue for `{task}` task! Require OpenAI format for all messages"
-                )
-
-            # For SimPO, we'll treat the entire chosen and rejected as single messages
-            prompt_messages = []
-            chosen_messages = [{"role": "assistant", "content": example["chosen"]}]
-            rejected_messages = [{"role": "assistant", "content": example["rejected"]}]
+            # Extract prompt if available, otherwise use an empty list
+            prompt = example.get("prompt", [])
+            if isinstance(prompt, str):
+                prompt = [{"role": "user", "content": prompt}]
 
             # Prepend a system message if auto_insert_empty_system_msg is True
-            if auto_insert_empty_system_msg:
-                prompt_messages = [{"role": "system", "content": ""}]
+            if auto_insert_empty_system_msg and (not prompt or prompt[0]["role"] != "system"):
+                prompt.insert(0, {"role": "system", "content": ""})
 
-            example["text_prompt"] = tokenizer.apply_chat_template(
-                prompt_messages, tokenize=False
-            )
-            example["text_chosen"] = tokenizer.apply_chat_template(
-                chosen_messages, tokenize=False
-            )
-            if example["text_chosen"].startswith(tokenizer.bos_token):
-                example["text_chosen"] = example["text_chosen"][
-                    len(tokenizer.bos_token) :
-                ]
-            example["text_rejected"] = tokenizer.apply_chat_template(
-                rejected_messages, tokenize=False
-            )
-            if example["text_rejected"].startswith(tokenizer.bos_token):
-                example["text_rejected"] = example["text_rejected"][
-                    len(tokenizer.bos_token) :
-                ]
+            example["text_prompt"] = tokenizer.apply_chat_template(prompt, tokenize=False)
+            example["text_chosen"] = tokenizer.apply_chat_template(chosen, tokenize=False)
+            example["text_rejected"] = tokenizer.apply_chat_template(rejected, tokenize=False)
+
+            # Remove leading BOS token if present
+            for key in ["text_chosen", "text_rejected"]:
+                if example[key].startswith(tokenizer.bos_token):
+                    example[key] = example[key][len(tokenizer.bos_token):]
         else:
             raise ValueError(
-                f"Could not format example as dialogue for `{task}` task! Require either the "
-                f"`[chosen, rejected]` or `[prompt, chosen, rejected]` keys but found {list(example.keys())}"
+                f"Could not format example for `simpo` task! Require `[chosen, rejected]` keys but found {list(example.keys())}"
             )
     else:
         raise ValueError(
