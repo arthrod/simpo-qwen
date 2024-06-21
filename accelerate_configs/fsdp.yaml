@@ -1,3 +1,4 @@
+# fsdp.yaml
 compute_environment: LOCAL_MACHINE
 debug: false
 distributed_type: FSDP

@@ -1,3 +1,4 @@
+# deepspeed_zero3.yaml
 compute_environment: LOCAL_MACHINE
 debug: false
 deepspeed_config:
