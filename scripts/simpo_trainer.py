@@ -60,6 +60,7 @@ class SimPOTrainer(DPOTrainer):
         )
 
         # Calculate the absolute difference between chosen and rejected log probabilities
+        # proxy measure of uncertainty
         abs_diff = torch.abs(pi_logratios)
 
         # Apply a weight based on the absolute difference
