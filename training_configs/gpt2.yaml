@@ -2,7 +2,7 @@
 # Model arguments
 model_name_or_path: openai-community/gpt2
 torch_dtype: null
-use_flash_attention_2: false
+use_flash_attention_2: true
 
 # Data training arguments
 dataset_mixer:

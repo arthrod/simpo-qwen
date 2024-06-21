@@ -79,15 +79,7 @@ class SimPOTrainer(DPOTrainer):
             rejected_rewards,
         )
 
-    def concatenated_forward(
-        self, model: nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]
-    ) -> Tuple[
-        torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor
-    ]:
-        """Run the given model on the given batch of inputs, concatenating the chosen and rejected inputs together.
-
-        We do this to avoid doing two forward passes, because it's faster for FSDP.
-        """
+    def concatenated_forward(self, model: nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
         concatenated_batch = self.concatenated_inputs(
             batch,
             is_encoder_decoder=self.is_encoder_decoder,
@@ -95,21 +87,22 @@ class SimPOTrainer(DPOTrainer):
             padding_value=self.padding_value,
             device=self.accelerator.device,
         )
-    
-        # Convert input_ids to Long type
-        concatenated_batch["concatenated_input_ids"] = concatenated_batch["concatenated_input_ids"].long()
         len_chosen = batch["chosen_labels"].shape[0]
 
-        model_kwargs = (
-            {
-                "labels": concatenated_batch["concatenated_labels"],
-                "decoder_input_ids": concatenated_batch.pop(
-                    "concatenated_decoder_input_ids", None
-                ),
-            }
-            if self.is_encoder_decoder
-            else {}
-        )
+        # Truncate inputs if they're too long
+        max_length = 1024  # or whatever the maximum length your model supports
+        for key in ['concatenated_input_ids', 'concatenated_attention_mask', 'concatenated_labels']:
+            if key in concatenated_batch and concatenated_batch[key].shape[1] > max_length:
+                concatenated_batch[key] = concatenated_batch[key][:, :max_length]
+
+        print("Input IDs shape:", concatenated_batch["concatenated_input_ids"].shape)
+        print("Attention Mask shape:", concatenated_batch["concatenated_attention_mask"].shape)
+        print("Max value in Input IDs:", torch.max(concatenated_batch["concatenated_input_ids"]))
+
+        model_kwargs = {
+            "labels": concatenated_batch["concatenated_labels"],
+            "decoder_input_ids": concatenated_batch.pop("concatenated_decoder_input_ids", None),
+        } if self.is_encoder_decoder else {}
 
         all_logits = model(
             concatenated_batch["concatenated_input_ids"],
