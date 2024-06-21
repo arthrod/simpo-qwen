@@ -124,21 +124,14 @@ def apply_chat_template(
                     f"Could not format example as dialogue for `{task}` task! Require OpenAI format for all messages"
                 )
 
-            # For DPO/ORPO, the inputs are triples of (prompt, chosen, rejected), where `chosen` and `rejected` are the final turn of a dialogue
-            # We therefore need to extract the N-1 turns to form the prompt
-            if "prompt" in example and is_openai_format(example["prompt"]):
-                prompt_messages = example["prompt"]
-                chosen_messages = example["chosen"]
-                rejected_messages = example["rejected"]
-            else:
-                prompt_messages = example["chosen"][:-1]
-                # Now we extract the final turn to define chosen/rejected responses
-                chosen_messages = example["chosen"][-1:]
-                rejected_messages = example["rejected"][-1:]
+            # For SimPO, we'll treat the entire chosen and rejected as single messages
+            prompt_messages = []
+            chosen_messages = [{"role": "assistant", "content": example["chosen"]}]
+            rejected_messages = [{"role": "assistant", "content": example["rejected"]}]
 
-            # Prepend a system message if the first message is not a system message
+            # Prepend a system message if auto_insert_empty_system_msg is True
             if auto_insert_empty_system_msg:
-                maybe_insert_system_message(prompt_messages, tokenizer)
+                prompt_messages = [{"role": "system", "content": ""}]
 
             example["text_prompt"] = tokenizer.apply_chat_template(
                 prompt_messages, tokenize=False
