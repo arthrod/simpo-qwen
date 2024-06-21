@@ -95,9 +95,9 @@ class SimPOTrainer(DPOTrainer):
             if key in concatenated_batch and concatenated_batch[key].shape[1] > max_length:
                 concatenated_batch[key] = concatenated_batch[key][:, :max_length]
 
-        print("Input IDs shape:", concatenated_batch["concatenated_input_ids"].shape)
-        print("Attention Mask shape:", concatenated_batch["concatenated_attention_mask"].shape)
-        print("Max value in Input IDs:", torch.max(concatenated_batch["concatenated_input_ids"]))
+        # print("Input IDs shape:", concatenated_batch["concatenated_input_ids"].shape)
+        # print("Attention Mask shape:", concatenated_batch["concatenated_attention_mask"].shape)
+        # print("Max value in Input IDs:", torch.max(concatenated_batch["concatenated_input_ids"]))
 
         model_kwargs = {
             "labels": concatenated_batch["concatenated_labels"],
