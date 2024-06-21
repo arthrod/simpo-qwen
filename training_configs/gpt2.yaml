@@ -30,7 +30,7 @@ log_level: info
 logging_steps: 5
 lr_scheduler_type: cosine
 max_length: 2048
-max_prompt_length: 1800
+max_prompt_length: 1024
 num_train_epochs: 1
 optim: adamw_torch
 output_dir: outputs/gpt2
