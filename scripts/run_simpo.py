@@ -230,6 +230,7 @@ def main():
     data_args.truncation_side = (
         "left"  # Truncate from left to ensure we don't lose labels in final turn
     )
+    model_args.tokenizer_name_or_path = "meta-llama/Llama-2-7b-hf"
     tokenizer = get_tokenizer(model_args, data_args)
 
     if "mistral" in model_args.model_name_or_path.lower():
