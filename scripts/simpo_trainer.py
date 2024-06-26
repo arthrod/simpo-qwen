@@ -221,14 +221,14 @@ class SimPOTrainer(DPOTrainer):
         #     policy_chosen_logits.detach().cpu().tolist()
         # )
 
-        # metrics[f"{prefix}all_logps_1"] = all_logps_1.detach().float().mean().cpu()
-        # metrics[f"{prefix}all_logps_1_values"] = (
-        #     all_logps_1.detach().float().cpu().tolist()
-        # )
+        metrics[f"{prefix}all_logps_1"] = all_logps_1.detach().float().mean().cpu()
+        metrics[f"{prefix}all_logps_1_values"] = (
+            all_logps_1.detach().float().cpu().tolist()
+        )
 
-        # metrics[f"{prefix}all_logps_2"] = all_logps_2.detach().float().mean().cpu()
-        # metrics[f"{prefix}all_logps_2_values"] = (
-        #     all_logps_2.detach().float().cpu().tolist()
-        # )
+        metrics[f"{prefix}all_logps_2"] = all_logps_2.detach().float().mean().cpu()
+        metrics[f"{prefix}all_logps_2_values"] = (
+            all_logps_2.detach().float().cpu().tolist()
+        )
 
         return weighted_losses.mean(), metrics
