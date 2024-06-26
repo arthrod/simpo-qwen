@@ -35,8 +35,8 @@ num_train_epochs: 1
 optim: adamw_torch
 output_dir: outputs/opt-350m
 run_name: opt-350m
-per_device_train_batch_size: 20
-per_device_eval_batch_size: 20
+per_device_train_batch_size: 10
+per_device_eval_batch_size: 10
 push_to_hub: false
 save_strategy: "steps"
 save_steps: 1000000
