@@ -135,6 +135,8 @@ class SimPOTrainer(DPOTrainer):
 
         chosen_logits = all_logits[:len_chosen]
         rejected_logits = all_logits[len_chosen:]
+        print(f"all_logps {all_logps}")
+        print(f"type(all_logps) {type(all_logps)}")
 
         return (
             chosen_logps,
