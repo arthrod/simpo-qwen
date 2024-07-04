@@ -23,6 +23,7 @@ class SimPOTrainer(DPOTrainer):
         torch.FloatTensor,
         torch.FloatTensor,
         torch.FloatTensor,
+        torch.FloatTensor,
     ]:
         """Compute the SimPO loss for a batch of policy model log probabilities.
 
@@ -69,17 +70,27 @@ class SimPOTrainer(DPOTrainer):
         # weight = torch.ones_like(original_losses)
 
         # confidence weighted loss
-        confidence_score = torch.sigmoid(pi_logratios)
-        weighted_losses = original_losses * (1 - confidence_score)
-        weight = 1 - confidence_score
+        # confidence_score = torch.sigmoid(pi_logratios)
+        # weighted_losses = original_losses * (1 - confidence_score)
+        # weight = 1 - confidence_score
 
         # Multiply the losses by the weight
         # weighted_losses = original_losses * weight
+
+        # Calculate confidence score
+        confidence_score = torch.sigmoid(pi_logratios)
+
+        # Center the weight around 1 and adjust variance
+        weight = 1 + (0.5 - confidence_score) * 0.02
+
+        # Apply the weight to the original losses
+        weighted_losses = original_losses * weight
 
         return (
             weighted_losses,
             original_losses,
             weight,
+            confidence_score,
             abs_diff,
             chosen_rewards,
             rejected_rewards,
@@ -174,6 +185,7 @@ class SimPOTrainer(DPOTrainer):
             weighted_losses,
             original_losses,
             weight,
+            confidence_score,
             abs_diff,
             chosen_rewards,
             rejected_rewards,
@@ -185,6 +197,7 @@ class SimPOTrainer(DPOTrainer):
         # metrics[f"{prefix}original_losses_values"] = original_losses.cpu().tolist()
 
         metrics[f"{prefix}weight"] = weight.mean().cpu()
+        metrics[f"{prefix}confidence_score"] = confidence_score.mean().cpu()
         # metrics[f"{prefix}weight_values"] = weight.cpu().tolist()
 
         metrics[f"{prefix}abs_diff"] = abs_diff.mean().cpu()
