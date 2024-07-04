@@ -80,7 +80,7 @@ class SimPOTrainer(DPOTrainer):
         # Calculate confidence score
         confidence_score = torch.sigmoid(pi_logratios)
 
-        variance = 0.02
+        variance = 0.00001
 
         # Center the weight around 1 and adjust variance
         weight = 1 + (0.5 - confidence_score) * variance
