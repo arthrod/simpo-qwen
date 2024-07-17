@@ -83,10 +83,10 @@ class SimPOTrainer(DPOTrainer):
         # Invert the confidence score to get uncertainty
         uncertainty = 1 - confidence_score
 
-        variance = 0.00001
+        variance = 0.1
 
         # Center the weight around 1 and adjust variance
-        weight = 1 + (0.5 - uncertainty) * variance
+        weight = torch.randn_like(original_losses) * variance + 1.0
 
         # Apply the weight to the original losses
         weighted_losses = original_losses * weight
