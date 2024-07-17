@@ -77,34 +77,16 @@ class SimPOTrainer(DPOTrainer):
         # Multiply the losses by the weight
         # weighted_losses = original_losses * weight
 
-        # # Calculate confidence score
-        # confidence_score = torch.sigmoid(pi_logratios)
-
-        # # Invert the confidence score to get uncertainty
-        # uncertainty = 1 - confidence_score
-
-        # variance = 1e-20
-
-        # # Center the weight around 1 and adjust variance
-        # weight = torch.randn_like(original_losses) * variance + 1.0
-
-        # # Apply the weight to the original losses
-        # weighted_losses = original_losses * weight
-
         # Calculate confidence score
         confidence_score = torch.sigmoid(pi_logratios)
 
         # Invert the confidence score to get uncertainty
         uncertainty = 1 - confidence_score
 
-        # Use uncertainty as weight
-        weight = uncertainty
+        variance = 1e-20
 
-        # Optionally, clip weights to prevent extreme values
-        weight = torch.clamp(weight, min=0.1, max=10.0)
-
-        # Normalize weights
-        weight = weight / weight.mean()
+        # Center the weight around 1 and adjust variance
+        weight = torch.randn_like(original_losses) * variance + 1.0
 
         # Apply the weight to the original losses
         weighted_losses = original_losses * weight
