@@ -75,7 +75,7 @@ class SimPOTrainer(DPOTrainer):
         final_weights = final_weights / final_weights.sum()
 
         # Apply weights to losses
-        weighted_losses = original_losses * final_weights
+        weighted_losses = original_losses * 1
 
         return (
             weighted_losses,
