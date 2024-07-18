@@ -66,7 +66,7 @@ class SimPOTrainer(DPOTrainer):
         )
 
         # Define variance (you can adjust this value)
-        variance = 1e-10
+        variance = 1e-20
 
         # Scale normalized weights by variance and add 1
         final_weights = 1 + normalized_weights * variance
