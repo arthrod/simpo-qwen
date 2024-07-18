@@ -61,12 +61,14 @@ class SimPOTrainer(DPOTrainer):
             self.beta * policy_rejected_logps.to(self.accelerator.device).detach()
         )
 
-        # Calculate uncertainty and reward margin
-        uncertainty = torch.abs(policy_chosen_logps - policy_rejected_logps)
-        margin = chosen_rewards - rejected_rewards
+        # Calculate uncertainty
+        uncertainty = torch.abs(pi_logratios)
+
+        # Calculate preference strength
+        preference_strength = torch.sigmoid(pi_logratios)
 
         # Compute weights
-        weights = uncertainty * torch.sigmoid(margin)
+        weights = uncertainty * preference_strength
         weights = weights / weights.sum()  # Normalize weights
 
         # Apply weights to losses
@@ -77,7 +79,7 @@ class SimPOTrainer(DPOTrainer):
             original_losses,
             weights,
             uncertainty,
-            margin,
+            preference_strength,
             chosen_rewards,
             rejected_rewards,
         )
