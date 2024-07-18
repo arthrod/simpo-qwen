@@ -26,17 +26,6 @@ class SimPOTrainer(DPOTrainer):
         torch.FloatTensor,
         torch.FloatTensor,
     ]:
-        """Compute the SimPO loss for a batch of policy model log probabilities.
-
-        Args:
-            policy_chosen_logps: Log probabilities of the policy model for the chosen responses. Shape: (batch_size,)
-            policy_rejected_logps: Log probabilities of the policy model for the rejected responses. Shape: (batch_size,)
-
-        Returns:
-            A tuple of three tensors: (losses, chosen_rewards, rejected_rewards).
-            The losses tensor contains the SimPO loss for each example in the batch.
-            The chosen_rewards and rejected_rewards tensors contain the rewards for the chosen and rejected responses, respectively.
-        """
         pi_logratios = policy_chosen_logps - policy_rejected_logps
         gamma_logratios = self.gamma / self.beta
         pi_logratios = pi_logratios.to(self.accelerator.device)
@@ -67,17 +56,31 @@ class SimPOTrainer(DPOTrainer):
         # Calculate preference strength
         preference_strength = torch.sigmoid(pi_logratios)
 
-        # Compute weights
-        weights = uncertainty * preference_strength
-        weights = weights / weights.sum()  # Normalize weights
+        # Compute base weights
+        base_weights = uncertainty * preference_strength
+
+        # Map base weights to [-1, 1] range
+        min_weight, max_weight = base_weights.min(), base_weights.max()
+        normalized_weights = (
+            2 * (base_weights - min_weight) / (max_weight - min_weight) - 1
+        )
+
+        # Define variance (you can adjust this value)
+        variance = 1e-10
+
+        # Scale normalized weights by variance and add 1
+        final_weights = 1 + normalized_weights * variance
+
+        # Normalize final weights to sum to 1
+        final_weights = final_weights / final_weights.sum()
 
         # Apply weights to losses
-        weighted_losses = original_losses * weights
+        weighted_losses = original_losses * final_weights
 
         return (
             weighted_losses,
             original_losses,
-            weights,
+            final_weights,
             uncertainty,
             preference_strength,
             chosen_rewards,
