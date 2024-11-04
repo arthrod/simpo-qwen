@@ -45,6 +45,32 @@ logger = logging.getLogger(__name__)
 
 MISTRAL_CHAT_TEMPLATE = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'].strip() + '\n\n' %}{% else %}{% set loop_messages = messages %}{% set system_message = '' %}{% endif %}{% for message in loop_messages %}{% if loop.index0 == 0 %}{% set content = system_message + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + content.strip() + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content.strip() + ' ' + eos_token }}{% endif %}{% endfor %}"
 
+def validate_system_message_count(text: str) -> bool:
+    """Validate that there's exactly one system message per dialogue."""
+    system_start_count = text.count("<|im_start|>system\n")
+    if system_start_count != 1:
+        return False
+    
+    # Check proper sequence
+    parts = text.split("<|im_start|>")
+    # First part should be empty, then system, then other messages
+    if len(parts) < 2:
+        return False
+    
+    # Second part should be system message
+    if not parts[1].startswith("system\n"):
+        return False
+        
+    return True
+
+def validate_dialogue(example):
+    """Validate both chosen and rejected dialogues."""
+    if not validate_system_message_count(example["text_chosen"]):
+        raise ValueError(f"Invalid system message count in chosen dialogue")
+    if not validate_system_message_count(example["text_rejected"]):
+        raise ValueError(f"Invalid system message count in rejected dialogue")
+    return example
+
 def apply_chat_template(
     example,
     tokenizer,
@@ -137,6 +163,7 @@ def apply_chat_template(
             raise ValueError(
                 f"Could not format example as dialogue for `rm` task! Require `[chosen, rejected]` keys but found {list(example.keys())}"
             )
+
     elif task == "simpo":
         if all(k in example.keys() for k in ("chosen", "rejected")):
             if not is_openai_format(example["chosen"]) or not is_openai_format(example["rejected"]):
@@ -153,44 +180,26 @@ def apply_chat_template(
                 chosen_messages = example["chosen"][-1:]
                 rejected_messages = example["rejected"][-1:]
 
-            try:
-                example["text_prompt"] = tokenizer.apply_chat_template(
-                    prompt_messages, 
-                    tokenize=False, 
-                    tools=None
-                )
-                example["text_chosen"] = tokenizer.apply_chat_template(
-                    chosen_messages, 
-                    tokenize=False, 
-                    tools=None
-                )
-                example["text_rejected"] = tokenizer.apply_chat_template(
-                    rejected_messages, 
-                    tokenize=False, 
-                    tools=None
-                )
+            # Only add system message if not present in chosen/rejected
+            system_message = {"role": "system", "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."}
+            if not any(msg.get("role") == "system" for msg in chosen_messages):
+                chosen_messages = [system_message] + list(chosen_messages)
+            if not any(msg.get("role") == "system" for msg in rejected_messages):
+                rejected_messages = [system_message] + list(rejected_messages)
 
-                if hasattr(tokenizer, 'bos_token') and tokenizer.bos_token is not None:
-                    if example["text_chosen"].startswith(tokenizer.bos_token):
-                        example["text_chosen"] = example["text_chosen"][len(tokenizer.bos_token):]
-                    if example["text_rejected"].startswith(tokenizer.bos_token):
-                        example["text_rejected"] = example["text_rejected"][len(tokenizer.bos_token):]
+            # Apply template
+            example["text_prompt"] = tokenizer.apply_chat_template(prompt_messages, tokenize=False)
+            example["text_chosen"] = tokenizer.apply_chat_template(chosen_messages, tokenize=False)
+            example["text_rejected"] = tokenizer.apply_chat_template(rejected_messages, tokenize=False)
 
-            except Exception as e:
-                logger.error(f"Error in template application: {str(e)}")
-                logger.error(f"Example: {example}")
-                raise
-        else:
-            raise ValueError(
-                f"Could not format example as dialogue for `{task}` task! Require either the "
-                f"`[chosen, rejected]` or `[prompt, chosen, rejected]` keys but found {list(example.keys())}"
-            )
-    else:
-        raise ValueError(
-            f"Task {task} not supported, please ensure that the provided task is one of ['sft', 'generation', 'rm', 'simpo']"
-        )
-    
-    return example
+            # Handle BOS token if needed
+            if hasattr(tokenizer, 'bos_token') and tokenizer.bos_token:
+                if example["text_chosen"].startswith(tokenizer.bos_token):
+                    example["text_chosen"] = example["text_chosen"][len(tokenizer.bos_token):]
+                if example["text_rejected"].startswith(tokenizer.bos_token):
+                    example["text_rejected"] = example["text_rejected"][len(tokenizer.bos_token):]
+
+        return example
 
 def main():
     parser = H4ArgumentParser((ModelArguments, DataArguments, SimPOConfig))

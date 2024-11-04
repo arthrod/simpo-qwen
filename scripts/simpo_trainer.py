@@ -60,6 +60,31 @@ if is_wandb_available():
 
 wandb.init(project="qwensimpo")
 
+def validate_system_message_count(text: str) -> bool:
+    """Validate that there's exactly one system message per dialogue."""
+    system_start_count = text.count("<|im_start|>system\n")
+    if system_start_count != 1:
+        return False
+    
+    # Check proper sequence
+    parts = text.split("<|im_start|>")
+    # First part should be empty, then system, then other messages
+    if len(parts) < 2:
+        return False
+    
+    # Second part should be system message
+    if not parts[1].startswith("system\n"):
+        return False
+        
+    return True
+
+def validate_dialogue(example):
+    """Validate both chosen and rejected dialogues."""
+    if not validate_system_message_count(example["text_chosen"]):
+        raise ValueError(f"Invalid system message count in chosen dialogue")
+    if not validate_system_message_count(example["text_rejected"]):
+        raise ValueError(f"Invalid system message count in rejected dialogue")
+    return example
 
 class SimPOTrainer(Trainer):
     r"""
@@ -926,11 +951,12 @@ class SimPOTrainer(Trainer):
         return loss, metrics
 
     def compute_loss(
-        self,
-        model: Union[PreTrainedModel, nn.Module],
-        inputs: Dict[str, Union[torch.Tensor, Any]],
-        return_outputs=False,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
+    self,
+    model: Union[PreTrainedModel, nn.Module],
+    inputs: Dict[str, Union[torch.Tensor, Any]],
+    return_outputs=False,
+    num_items_in_batch=None,  # Add this parameter
+) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         if not self.use_dpo_data_collator:
             warnings.warn(
                 "compute_loss is only implemented for DPODataCollatorWithPadding, and you passed a datacollator that is different than "
