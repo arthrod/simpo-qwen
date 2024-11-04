@@ -1,14 +1,73 @@
 # Model arguments
 model_name_or_path: rombodawg/Rombos-LLM-V2.6-Qwen-14b
-torch_dtype: bfloat16
+torch_dtype: null
 attn_implementation: flash_attention_2  # As recommended for Qwen
 
 # Data training arguments
-chat_template: "{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if messages[0]['role'] == 'system' %}\n        {{- messages[0]['content'] }}\n    {%- else %}\n        {{- 'You are Qwen, created by Alibaba Cloud. You are a helpful assistant.' }}\n    {%- endif %}\n    {{- \"\\n\\n# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-json-object>}\\n</tool_call><|im_end|>\\n\" }}\n{%- else %}\n    {%- if messages[0]['role'] == 'system' %}\n        {{- '<|im_start|>system\\n' + messages[0]['content'] + '<|im_end|>\\n' }}\n    {%- else %}\n        {{- '<|im_start|>system\\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- for message in messages %}\n    {%- if (message.role == \"user\") or (message.role == \"system\" and not loop.first) or (message.role == \"assistant\" and not message.tool_calls) %}\n        {{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {{- '<|im_start|>' + message.role }}\n        {%- if message.content %}\n            {{- '\\n' + message.content }}\n        {%- endif %}\n        {%- for tool_call in message.tool_calls %}\n            {%- if tool_call.function is defined %}\n                {%- set tool_call = tool_call.function %}\n            {%- endif %}\n            {{- '\\n<tool_call>\\n{\"name\": \"' }}\n            {{- tool_call.name }}\n            {{- '\", \"arguments\": ' }}\n            {{- tool_call.arguments | tojson }}\n            {{- '}\\n</tool_call>' }}\n        {%- endfor %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if (loop.index0 == 0) or (messages[loop.index0 - 1].role != \"tool\") %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- message.content }}\n        {{- '\\n</tool_response>' }}\n        {%- if loop.last or (messages[loop.index0 + 1].role != \"tool\") %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n{%- endif %}\n"
+chat_template: |
+  {%- if tools %}
+  {{- '<|im_start|>system\n' }}
+  {%- if messages[0]['role'] == 'system' %}
+      {{- messages[0]['content'] }}
+  {%- else %}
+      {{- 'You are Qwen, created by Alibaba Cloud. You are a helpful assistant.' }}
+  {%- endif %}
+  {{- "\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>" }}
+  {%- for tool in tools %}
+      {{- "\n" }}
+      {{- tool | tojson }}
+  {%- endfor %}
+  {{- "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n" }}
+  {%- else %}
+  {%- if messages[0]['role'] == 'system' %}
+      {{- '<|im_start|>system\n' + messages[0]['content'] + '<|im_end|>\n' }}
+  {%- else %}
+      {{- '<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n' }}
+  {%- endif %}
+  {%- endif %}
+  {%- for message in messages %}
+  {%- if (message.role == "user") or (message.role == "system" and not loop.first) or (message.role == "assistant" and not message.tool_calls) %}
+      {{- '<|im_start|>' + message.role + '\n' + message.content + '<|im_end|>' + '\n' }}
+  {%- elif message.role == "assistant" %}
+      {{- '<|im_start|>' + message.role }}
+      {%- if message.content %}
+          {{- '\n' + message.content }}
+      {%- endif %}
+      {%- for tool_call in message.tool_calls %}
+          {%- if tool_call.function is defined %}
+              {%- set tool_call = tool_call.function %}
+          {%- endif %}
+          {{- '\n<tool_call>\n{"name": "' }}
+          {{- tool_call.name }}
+          {{- '", "arguments": ' }}
+          {{- tool_call.arguments | tojson }}
+          {{- '}\n</tool_call>' }}
+      {%- endfor %}
+      {{- '<|im_end|>\n' }}
+  {%- elif message.role == "tool" %}
+      {%- if (loop.index0 == 0) or (messages[loop.index0 - 1].role != "tool") %}
+          {{- '<|im_start|>user' }}
+      {%- endif %}
+      {{- '\n<tool_response>\n' }}
+      {{- message.content }}
+      {{- '\n</tool_response>' }}
+      {%- if loop.last or (messages[loop.index0 + 1].role != "tool") %}
+          {{- '<|im_end|>\n' }}
+      {%- endif %}
+  {%- endif %}
+  {%- endfor %}
+  {%- if add_generation_prompt %}
+      {{- '<|im_start|>assistant\n' }}
+  {%- endif %}
+
 dataset_mixer:
-  local_json_file: 1.0
-local_json_path: "/workspace/qwen-simpo.json"
+  arthrod/binarized_trimmed_60percent: 1.0
+#arthrod/alignment-handbook/binarized_trimmed_60percent: 1.0
+dataset_splits:
+- train
+- test
 preprocessing_num_workers: 12
+      
 
 # SimPOTrainer arguments
 bf16: true
@@ -17,7 +76,7 @@ gamma_beta_ratio: 0.5  # As per SimPO recommendation
 do_eval: true
 evaluation_strategy: steps
 eval_steps: 400
-gradient_accumulation_steps: 16  # Adjust to achieve total batch size close to 128
+gradient_accumulation_steps: 4  # Adjust to achieve total batch size close to 128
 gradient_checkpointing: true
 hub_model_id: rombos-llm-v2.6-qwen-14b-simpo
 learning_rate: 5.0e-7  # Start with the lower end of SimPO range
@@ -30,8 +89,8 @@ num_train_epochs: 1  # As per SimPO recommendation
 optim: adamw_torch
 output_dir: outputs/rombos-llm-v2.6-qwen-14b-simpo
 run_name: rombos-llm-v2.6-qwen-14b-simpo
-per_device_train_batch_size: 2  # Reduced due to larger model size
-per_device_eval_batch_size: 2
+per_device_train_batch_size: 8  # Reduced due to larger model size
+per_device_eval_batch_size: 8
 push_to_hub: false
 save_strategy: "steps"
 save_steps: 1000  # As per Qwen recommendation

@@ -40,7 +40,7 @@ from simpo_trainer import SimPOTrainer
 from simpo_config import SimPOConfig
 from dataclasses import dataclass, field
 from typing import Optional, Literal
-
+from typing import Literal
 logger = logging.getLogger(__name__)
 
 MISTRAL_CHAT_TEMPLATE = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'].strip() + '\n\n' %}{% else %}{% set loop_messages = messages %}{% set system_message = '' %}{% endif %}{% for message in loop_messages %}{% if loop.index0 == 0 %}{% set content = system_message + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + content.strip() + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content.strip() + ' ' + eos_token }}{% endif %}{% endfor %}"
@@ -49,32 +49,90 @@ def apply_chat_template(
     example,
     tokenizer,
     task: Literal["sft", "generation", "rm", "simpo"],
-    auto_insert_empty_system_msg: bool = True,
+    auto_insert_empty_system_msg: bool = False,
     change_template = None,
 ):
-    if change_template == "mistral":
-        tokenizer.chat_template = MISTRAL_CHAT_TEMPLATE
+    """
+    Applies the Qwen chat template to format conversations.
+    """
+    QWEN_CHAT_TEMPLATE = """{%- if tools %}
+{{- '<|im_start|>system\\n' }}
+{%- if messages[0]['role'] == 'system' %}
+    {{- messages[0]['content'] }}
+{%- else %}
+    {{- 'You are Qwen, created by Alibaba Cloud. You are a helpful assistant.' }}
+{%- endif %}
+{{- "\\n\\n# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>" }}
+{%- for tool in tools %}
+    {{- "\\n" }}
+    {{- tool | tojson }}
+{%- endfor %}
+{{- "\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\"name\\": <function-name>, \\"arguments\\": <args-json-object>}\\n</tool_call><|im_end|>\\n" }}
+{%- else %}
+{%- if messages[0]['role'] == 'system' %}
+    {{- '<|im_start|>system\\n' + messages[0]['content'] + '<|im_end|>\\n' }}
+{%- endif %}
+{%- endif %}
+{%- for message in messages %}
+{%- if (message['role'] == "user") or (message['role'] == "system" and not loop.first) or (message['role'] == "assistant" and not message.get('tool_calls')) %}
+    {{- '<|im_start|>' + message['role'] + '\\n' + message['content'] + '<|im_end|>' + '\\n' }}
+{%- elif message['role'] == "assistant" %}
+    {{- '<|im_start|>' + message['role'] }}
+    {%- if message.get('content') %}
+        {{- '\\n' + message['content'] }}
+    {%- endif %}
+    {%- for tool_call in message.get('tool_calls', []) %}
+        {%- if tool_call.get('function') %}
+            {%- set tool_call = tool_call['function'] %}
+        {%- endif %}
+        {{- '\\n<tool_call>\\n{"name": "' }}
+        {{- tool_call['name'] }}
+        {{- '", "arguments": ' }}
+        {{- tool_call['arguments'] | tojson }}
+        {{- '}\\n</tool_call>' }}
+    {%- endfor %}
+    {{- '<|im_end|>\\n' }}
+{%- elif message['role'] == "tool" %}
+    {%- if (loop.index0 == 0) or (messages[loop.index0 - 1]['role'] != "tool") %}
+        {{- '<|im_start|>user' }}
+    {%- endif %}
+    {{- '\\n<tool_response>\\n' }}
+    {{- message['content'] }}
+    {{- '\\n</tool_response>' }}
+    {%- if loop.last or (messages[loop.index0 + 1]['role'] != "tool") %}
+        {{- '<|im_end|>\\n' }}
+    {%- endif %}
+{%- endif %}
+{%- endfor %}
+{%- if add_generation_prompt %}
+    {{- '<|im_start|>assistant\\n' }}
+{%- endif %}"""
+
+    tokenizer.chat_template = QWEN_CHAT_TEMPLATE
+
     if task in ["sft", "generation"]:
         messages = example["messages"]
-        # We add an empty system message if there is none
-        if auto_insert_empty_system_msg:
-            maybe_insert_system_message(messages, tokenizer)
         example["text"] = tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True if task == "generation" else False,
+            tools=None
         )
     elif task == "rm":
         if all(k in example.keys() for k in ("chosen", "rejected")):
             chosen_messages = example["chosen"]
             rejected_messages = example["rejected"]
-            # We add an empty system message if there is none
-            if auto_insert_empty_system_msg:
-                maybe_insert_system_message(chosen_messages, tokenizer)
-                maybe_insert_system_message(rejected_messages, tokenizer)
 
-            example["text_chosen"] = tokenizer.apply_chat_template(chosen_messages, tokenize=False)
-            example["text_rejected"] = tokenizer.apply_chat_template(rejected_messages, tokenize=False)
+            example["text_chosen"] = tokenizer.apply_chat_template(
+                chosen_messages, 
+                tokenize=False, 
+                tools=None
+            )
+            example["text_rejected"] = tokenizer.apply_chat_template(
+                rejected_messages, 
+                tokenize=False, 
+                tools=None
+            )
         else:
             raise ValueError(
                 f"Could not format example as dialogue for `rm` task! Require `[chosen, rejected]` keys but found {list(example.keys())}"
@@ -86,29 +144,42 @@ def apply_chat_template(
                     f"Could not format example as dialogue for `{task}` task! Require OpenAI format for all messages"
                 )
 
-            # For DPO/ORPO, the inputs are triples of (prompt, chosen, rejected), where `chosen` and `rejected` are the final turn of a dialogue
-            # We therefore need to extract the N-1 turns to form the prompt
             if "prompt" in example and is_openai_format(example["prompt"]):
                 prompt_messages = example["prompt"]
                 chosen_messages = example["chosen"]
                 rejected_messages = example["rejected"]
             else:
                 prompt_messages = example["chosen"][:-1]
-                # Now we extract the final turn to define chosen/rejected responses
                 chosen_messages = example["chosen"][-1:]
                 rejected_messages = example["rejected"][-1:]
 
-            # Prepend a system message if the first message is not a system message
-            if auto_insert_empty_system_msg:
-                maybe_insert_system_message(prompt_messages, tokenizer)
+            try:
+                example["text_prompt"] = tokenizer.apply_chat_template(
+                    prompt_messages, 
+                    tokenize=False, 
+                    tools=None
+                )
+                example["text_chosen"] = tokenizer.apply_chat_template(
+                    chosen_messages, 
+                    tokenize=False, 
+                    tools=None
+                )
+                example["text_rejected"] = tokenizer.apply_chat_template(
+                    rejected_messages, 
+                    tokenize=False, 
+                    tools=None
+                )
 
-            example["text_prompt"] = tokenizer.apply_chat_template(prompt_messages, tokenize=False)
-            example["text_chosen"] = tokenizer.apply_chat_template(chosen_messages, tokenize=False)
-            if example["text_chosen"].startswith(tokenizer.bos_token):
-                example["text_chosen"] = example["text_chosen"][len(tokenizer.bos_token):]
-            example["text_rejected"] = tokenizer.apply_chat_template(rejected_messages, tokenize=False)
-            if example["text_rejected"].startswith(tokenizer.bos_token):
-                example["text_rejected"] = example["text_rejected"][len(tokenizer.bos_token):]
+                if hasattr(tokenizer, 'bos_token') and tokenizer.bos_token is not None:
+                    if example["text_chosen"].startswith(tokenizer.bos_token):
+                        example["text_chosen"] = example["text_chosen"][len(tokenizer.bos_token):]
+                    if example["text_rejected"].startswith(tokenizer.bos_token):
+                        example["text_rejected"] = example["text_rejected"][len(tokenizer.bos_token):]
+
+            except Exception as e:
+                logger.error(f"Error in template application: {str(e)}")
+                logger.error(f"Example: {example}")
+                raise
         else:
             raise ValueError(
                 f"Could not format example as dialogue for `{task}` task! Require either the "
@@ -116,10 +187,10 @@ def apply_chat_template(
             )
     else:
         raise ValueError(
-            f"Task {task} not supported, please ensure that the provided task is one of ['sft', 'generation', 'rm', 'dpo', 'orpo']"
+            f"Task {task} not supported, please ensure that the provided task is one of ['sft', 'generation', 'rm', 'simpo']"
         )
+    
     return example
-
 
 def main():
     parser = H4ArgumentParser((ModelArguments, DataArguments, SimPOConfig))
@@ -192,9 +263,13 @@ def main():
         remove_columns=column_names,
         desc="Formatting comparisons with prompt template",
     )
+    logger.info("Dataset columns after applying template:")
+    for split in raw_datasets:
+        logger.info(f"{split}: {raw_datasets[split].column_names}")
 
     # Replace column names with what TRL needs, text_chosen -> chosen and text_rejected -> rejected
     for split in ["train", "test"]:
+        logger.info(f"{split}: {raw_datasets[split].column_names}")
         raw_datasets[split] = raw_datasets[split].rename_columns(
             {"text_prompt": "prompt", "text_chosen": "chosen", "text_rejected": "rejected"}
         )
