@@ -13,6 +13,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# run_simpo.py
 import logging
 import random
 import sys
@@ -37,171 +39,196 @@ from alignment import (
 from alignment.data import maybe_insert_system_message, is_openai_format
 from peft import PeftConfig, PeftModel
 from simpo_trainer import SimPOTrainer
-from simpo_config import SimPOConfig
 from dataclasses import dataclass, field
 from typing import Optional, Literal
-from typing import Literal
+
 logger = logging.getLogger(__name__)
 
 MISTRAL_CHAT_TEMPLATE = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'].strip() + '\n\n' %}{% else %}{% set loop_messages = messages %}{% set system_message = '' %}{% endif %}{% for message in loop_messages %}{% if loop.index0 == 0 %}{% set content = system_message + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + content.strip() + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content.strip() + ' ' + eos_token }}{% endif %}{% endfor %}"
 
-def validate_system_message_count(text: str) -> bool:
-    """Validate that there's exactly one system message per dialogue."""
-    system_start_count = text.count("<|im_start|>system\n")
-    if system_start_count != 1:
-        return False
-    
-    # Check proper sequence
-    parts = text.split("<|im_start|>")
-    # First part should be empty, then system, then other messages
-    if len(parts) < 2:
-        return False
-    
-    # Second part should be system message
-    if not parts[1].startswith("system\n"):
-        return False
-        
-    return True
 
-def validate_dialogue(example):
-    """Validate both chosen and rejected dialogues."""
-    if not validate_system_message_count(example["text_chosen"]):
-        raise ValueError(f"Invalid system message count in chosen dialogue")
-    if not validate_system_message_count(example["text_rejected"]):
-        raise ValueError(f"Invalid system message count in rejected dialogue")
-    return example
+@dataclass
+class SimPOConfig(DPOConfig):
+    gamma: Optional[float] = field(
+        default=0.5,
+        metadata={"help": "The target reward margin term in SimPO loss."},
+    )
+    ref_model_init_kwargs: Optional[dict] = field(default=None)
+    generate_during_eval: Optional[bool] = field(default=None)
+    model_adapter_name: Optional[str] = field(default=None)
+    ref_adapter_name: Optional[str] = field(default=None)
+    reference_free: Optional[bool] = field(default=False)
+    precompute_ref_log_probs: Optional[bool] = field(default=False)
+
+    ref_model = None
+    padding_value = None
+    max_target_length = None
+    dataset_num_proc = None
+    callbacks = None
+    optimizers = (None, None)
+    preprocess_logits_for_metrics = None
+    compute_metrics = None
+    eval_dataset = None
+    model_init = None
+    label_pad_token_id = -100
+    disable_dropout = True
+    truncation_mode = "keep_end"
+    label_smoothing = 0
+    sync_ref_model = None
+
 
 def apply_chat_template(
     example,
     tokenizer,
     task: Literal["sft", "generation", "rm", "simpo"],
-    auto_insert_empty_system_msg: bool = False,
-    change_template = None,
+    auto_insert_empty_system_msg: bool = True,
+    change_template=None,
 ):
     """
-    Applies the Qwen chat template to format conversations.
+    Apply a chat template to an example dictionary based on the specified task.
+    
+    This function formats dialogue messages contained in the input dictionary according to the
+    task type. For tasks "sft" and "generation", it processes the list of messages stored under the
+    "messages" key, optionally inserting an empty system message if one is not present. For task "rm",
+    it expects both "chosen" and "rejected" keys, applies the chat template to each, and stores the
+    results in "text_chosen" and "text_rejected". For task "simpo", the function handles inputs as
+    triples of (prompt, chosen, rejected) where the prompt is either provided explicitly or derived by
+    taking all but the last turn of the "chosen" list, and then formats and separates the prompt,
+    chosen, and rejected responses accordingly (removing any beginning-of-sequence token from the latter
+    two if present).
+    
+    If the optional parameter change_template is set to "mistral", the tokenizer’s chat_template is set
+    to a predefined MISTRAL_CHAT_TEMPLATE.
+    
+    Parameters:
+        example (dict): A dictionary containing dialogue data. Depending on the task, required keys are:
+            - "sft" or "generation": must include "messages".
+            - "rm": must include both "chosen" and "rejected".
+            - "simpo": must include either ["chosen", "rejected"] or ["prompt", "chosen", "rejected"].
+        tokenizer: An object with chat formatting methods and attributes, including
+            apply_chat_template(), chat_template, and bos_token.
+        task (Literal["sft", "generation", "rm", "simpo"]): Specifies the formatting task.
+        auto_insert_empty_system_msg (bool, optional): If True, inserts an empty system message when none is
+            present. Defaults to True.
+        change_template (optional): If set to "mistral", updates the tokenizer's chat_template to use the
+            MISTRAL_CHAT_TEMPLATE constant.
+    
+    Returns:
+        dict: The updated example dictionary with additional keys:
+            - For "sft" and "generation": adds "text".
+            - For "rm": adds "text_chosen" and "text_rejected".
+            - For "simpo": adds "text_prompt", "text_chosen", and "text_rejected".
+    
+    Raises:
+        ValueError: If required keys for the specified task are missing, if the message format is not valid
+            (e.g., not in OpenAI format for "simpo"), or if the task is not supported.
     """
-    QWEN_CHAT_TEMPLATE = """{%- if tools %}
-{{- '<|im_start|>system\\n' }}
-{%- if messages[0]['role'] == 'system' %}
-    {{- messages[0]['content'] }}
-{%- else %}
-    {{- 'You are Qwen, created by Alibaba Cloud. You are a helpful assistant.' }}
-{%- endif %}
-{{- "\\n\\n# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>" }}
-{%- for tool in tools %}
-    {{- "\\n" }}
-    {{- tool | tojson }}
-{%- endfor %}
-{{- "\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\"name\\": <function-name>, \\"arguments\\": <args-json-object>}\\n</tool_call><|im_end|>\\n" }}
-{%- else %}
-{%- if messages[0]['role'] == 'system' %}
-    {{- '<|im_start|>system\\n' + messages[0]['content'] + '<|im_end|>\\n' }}
-{%- endif %}
-{%- endif %}
-{%- for message in messages %}
-{%- if (message['role'] == "user") or (message['role'] == "system" and not loop.first) or (message['role'] == "assistant" and not message.get('tool_calls')) %}
-    {{- '<|im_start|>' + message['role'] + '\\n' + message['content'] + '<|im_end|>' + '\\n' }}
-{%- elif message['role'] == "assistant" %}
-    {{- '<|im_start|>' + message['role'] }}
-    {%- if message.get('content') %}
-        {{- '\\n' + message['content'] }}
-    {%- endif %}
-    {%- for tool_call in message.get('tool_calls', []) %}
-        {%- if tool_call.get('function') %}
-            {%- set tool_call = tool_call['function'] %}
-        {%- endif %}
-        {{- '\\n<tool_call>\\n{"name": "' }}
-        {{- tool_call['name'] }}
-        {{- '", "arguments": ' }}
-        {{- tool_call['arguments'] | tojson }}
-        {{- '}\\n</tool_call>' }}
-    {%- endfor %}
-    {{- '<|im_end|>\\n' }}
-{%- elif message['role'] == "tool" %}
-    {%- if (loop.index0 == 0) or (messages[loop.index0 - 1]['role'] != "tool") %}
-        {{- '<|im_start|>user' }}
-    {%- endif %}
-    {{- '\\n<tool_response>\\n' }}
-    {{- message['content'] }}
-    {{- '\\n</tool_response>' }}
-    {%- if loop.last or (messages[loop.index0 + 1]['role'] != "tool") %}
-        {{- '<|im_end|>\\n' }}
-    {%- endif %}
-{%- endif %}
-{%- endfor %}
-{%- if add_generation_prompt %}
-    {{- '<|im_start|>assistant\\n' }}
-{%- endif %}"""
-
-    tokenizer.chat_template = QWEN_CHAT_TEMPLATE
-
+    if change_template == "mistral":
+        tokenizer.chat_template = MISTRAL_CHAT_TEMPLATE
     if task in ["sft", "generation"]:
         messages = example["messages"]
+        # We add an empty system message if there is none
+        if auto_insert_empty_system_msg:
+            maybe_insert_system_message(messages, tokenizer)
         example["text"] = tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True if task == "generation" else False,
-            tools=None
         )
     elif task == "rm":
         if all(k in example.keys() for k in ("chosen", "rejected")):
             chosen_messages = example["chosen"]
             rejected_messages = example["rejected"]
+            # We add an empty system message if there is none
+            if auto_insert_empty_system_msg:
+                maybe_insert_system_message(chosen_messages, tokenizer)
+                maybe_insert_system_message(rejected_messages, tokenizer)
 
             example["text_chosen"] = tokenizer.apply_chat_template(
-                chosen_messages, 
-                tokenize=False, 
-                tools=None
+                chosen_messages, tokenize=False
             )
             example["text_rejected"] = tokenizer.apply_chat_template(
-                rejected_messages, 
-                tokenize=False, 
-                tools=None
+                rejected_messages, tokenize=False
             )
         else:
             raise ValueError(
                 f"Could not format example as dialogue for `rm` task! Require `[chosen, rejected]` keys but found {list(example.keys())}"
             )
-
     elif task == "simpo":
         if all(k in example.keys() for k in ("chosen", "rejected")):
-            if not is_openai_format(example["chosen"]) or not is_openai_format(example["rejected"]):
+            if not is_openai_format(example["chosen"]) or not is_openai_format(
+                example["rejected"]
+            ):
                 raise ValueError(
                     f"Could not format example as dialogue for `{task}` task! Require OpenAI format for all messages"
                 )
 
+            # For DPO/ORPO, the inputs are triples of (prompt, chosen, rejected), where `chosen` and `rejected` are the final turn of a dialogue
+            # We therefore need to extract the N-1 turns to form the prompt
             if "prompt" in example and is_openai_format(example["prompt"]):
                 prompt_messages = example["prompt"]
                 chosen_messages = example["chosen"]
                 rejected_messages = example["rejected"]
             else:
                 prompt_messages = example["chosen"][:-1]
+                # Now we extract the final turn to define chosen/rejected responses
                 chosen_messages = example["chosen"][-1:]
                 rejected_messages = example["rejected"][-1:]
 
-            # Only add system message if not present in chosen/rejected
-            system_message = {"role": "system", "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."}
-            if not any(msg.get("role") == "system" for msg in chosen_messages):
-                chosen_messages = [system_message] + list(chosen_messages)
-            if not any(msg.get("role") == "system" for msg in rejected_messages):
-                rejected_messages = [system_message] + list(rejected_messages)
+            # Prepend a system message if the first message is not a system message
+            if auto_insert_empty_system_msg:
+                maybe_insert_system_message(prompt_messages, tokenizer)
 
-            # Apply template
-            example["text_prompt"] = tokenizer.apply_chat_template(prompt_messages, tokenize=False)
-            example["text_chosen"] = tokenizer.apply_chat_template(chosen_messages, tokenize=False)
-            example["text_rejected"] = tokenizer.apply_chat_template(rejected_messages, tokenize=False)
+            example["text_prompt"] = tokenizer.apply_chat_template(
+                prompt_messages, tokenize=False
+            )
+            example["text_chosen"] = tokenizer.apply_chat_template(
+                chosen_messages, tokenize=False
+            )
+            if example["text_chosen"].startswith(tokenizer.bos_token):
+                example["text_chosen"] = example["text_chosen"][
+                    len(tokenizer.bos_token) :
+                ]
+            example["text_rejected"] = tokenizer.apply_chat_template(
+                rejected_messages, tokenize=False
+            )
+            if example["text_rejected"].startswith(tokenizer.bos_token):
+                example["text_rejected"] = example["text_rejected"][
+                    len(tokenizer.bos_token) :
+                ]
+        else:
+            raise ValueError(
+                f"Could not format example as dialogue for `{task}` task! Require either the "
+                f"`[chosen, rejected]` or `[prompt, chosen, rejected]` keys but found {list(example.keys())}"
+            )
+    else:
+        raise ValueError(
+            f"Task {task} not supported, please ensure that the provided task is one of ['sft', 'generation', 'rm', 'dpo', 'orpo']"
+        )
+    return example
 
-            # Handle BOS token if needed
-            if hasattr(tokenizer, 'bos_token') and tokenizer.bos_token:
-                if example["text_chosen"].startswith(tokenizer.bos_token):
-                    example["text_chosen"] = example["text_chosen"][len(tokenizer.bos_token):]
-                if example["text_rejected"].startswith(tokenizer.bos_token):
-                    example["text_rejected"] = example["text_rejected"][len(tokenizer.bos_token):]
-
-        return example
 
 def main():
+    """
+    Main entry point for training and evaluating a model using the SimPO method.
+    
+    This function performs the following steps:
+    1. Parses command-line arguments for model, data, and training configurations using H4ArgumentParser.
+    2. Configures logging, including process-specific log levels and formatter settings.
+    3. Checks for an existing checkpoint and sets a random seed for reproducibility.
+    4. Loads datasets with specified splits and columns, logs dataset summaries, and applies a chat template to format comparisons.
+    5. Renames dataset columns to match expected input names for training.
+    6. Initializes the tokenizer and adjusts configurations based on model type (e.g., applying a "mistral" template if applicable).
+    7. Sets up model keyword arguments, including device mapping and quantization configurations.
+    8. Determines if the model uses an adapter; if so, loads both the base model and the adapter.
+    9. Instantiates a SimPOTrainer object with the model, (optional) reference model, training arguments, datasets, tokenizer, and additional configuration parameters.
+    10. Executes the training loop, logs training metrics, and saves the training state and model after completion.
+    11. Saves the final model, creates a model card, and optionally evaluates the model and pushes it to a hub if specified.
+    
+    Usage Example:
+        if __name__ == "__main__":
+            main()
+    """
     parser = H4ArgumentParser((ModelArguments, DataArguments, SimPOConfig))
     model_args, data_args, training_args = parser.parse()
 
@@ -239,7 +266,16 @@ def main():
         data_args,
         splits=data_args.dataset_splits,
         configs=data_args.dataset_configs,
-        columns_to_keep=["messages", "chosen", "rejected", "prompt", "completion", "label"],
+        columns_to_keep=[
+            "messages",
+            "chosen",
+            "rejected",
+            "prompt",
+            "completion",
+            "label",
+            "score_chosen",
+            "score_rejected",
+        ],
         # seed=training_args.seed,
     )
     logger.info(
@@ -250,7 +286,9 @@ def main():
     #####################################
     # Load tokenizer and process datasets
     #####################################
-    data_args.truncation_side = "left"  # Truncate from left to ensure we don't lose labels in final turn
+    data_args.truncation_side = (
+        "left"  # Truncate from left to ensure we don't lose labels in final turn
+    )
     tokenizer = get_tokenizer(model_args, data_args)
 
     if "mistral" in model_args.model_name_or_path.lower():
@@ -272,74 +310,97 @@ def main():
         remove_columns=column_names,
         desc="Formatting comparisons with prompt template",
     )
-    logger.info("Dataset columns after applying template:")
-    for split in raw_datasets:
-        logger.info(f"{split}: {raw_datasets[split].column_names}")
 
     # Replace column names with what TRL needs, text_chosen -> chosen and text_rejected -> rejected
     for split in ["train", "test"]:
-        logger.info(f"{split}: {raw_datasets[split].column_names}")
         raw_datasets[split] = raw_datasets[split].rename_columns(
-            {"text_prompt": "prompt", "text_chosen": "chosen", "text_rejected": "rejected"}
+            {
+                "text_prompt": "prompt",
+                "text_chosen": "chosen",
+                "text_rejected": "rejected",
+            }
         )
 
     # Log a few random samples from the training set:
     for index in random.sample(range(len(raw_datasets["train"])), 3):
-        logger.info(f"Prompt sample {index} of the raw training set:\n\n{raw_datasets['train'][index]['prompt']}")
-        logger.info(f"Chosen sample {index} of the raw training set:\n\n{raw_datasets['train'][index]['chosen']}")
-        logger.info(f"Rejected sample {index} of the raw training set:\n\n{raw_datasets['train'][index]['rejected']}")
+        logger.info(
+            f"Prompt sample {index} of the raw training set:\n\n{raw_datasets['train'][index]['prompt']}"
+        )
+        logger.info(
+            f"Chosen sample {index} of the raw training set:\n\n{raw_datasets['train'][index]['chosen']}"
+        )
+        logger.info(
+            f"Rejected sample {index} of the raw training set:\n\n{raw_datasets['train'][index]['rejected']}"
+        )
 
     torch_dtype = (
-        model_args.torch_dtype if model_args.torch_dtype in ["auto", None] else getattr(torch, model_args.torch_dtype)
+        model_args.torch_dtype
+        if model_args.torch_dtype in ["auto", None]
+        else getattr(torch, model_args.torch_dtype)
     )
     quantization_config = get_quantization_config(model_args)
 
     model_kwargs = dict(
         revision=model_args.model_revision,
         trust_remote_code=model_args.trust_remote_code,
+        use_flash_attention_2=model_args.use_flash_attention_2,
         torch_dtype=torch_dtype,
         use_cache=False if training_args.gradient_checkpointing else True,
         device_map=get_kbit_device_map() if quantization_config is not None else None,
         quantization_config=quantization_config,
-        attn_implementation=model_args.attn_implementation,
     )
 
     model = model_args.model_name_or_path
-    # seems to require internet
-    # if is_adapter_model(model, model_args.model_revision) is True:
-    #     logger.info(f"Loading SFT adapter for {model_args.model_name_or_path=}")
-    #     peft_config = PeftConfig.from_pretrained(model_args.model_name_or_path, revision=model_args.model_revision)
-    #     model_kwargs = dict(
-    #         revision=model_args.base_model_revision,
-    #         trust_remote_code=model_args.trust_remote_code,
-    #         use_flash_attention_2=model_args.use_flash_attention_2,
-    #         torch_dtype=torch_dtype,
-    #         use_cache=False if training_args.gradient_checkpointing else True,
-    #         device_map=get_kbit_device_map() if quantization_config is not None else None,
-    #         quantization_config=quantization_config,
-    #     )
-    #     base_model = AutoModelForCausalLM.from_pretrained(
-    #         peft_config.base_model_name_or_path,
-    #         **model_kwargs,
-    #     )
-    #     model = PeftModel.from_pretrained(
-    #         base_model,
-    #         model_args.model_name_or_path,
-    #         revision=model_args.model_revision,
-    #     )
-    #     model_kwargs = None
+    if is_adapter_model(model, model_args.model_revision) is True:
+        logger.info(f"Loading SFT adapter for {model_args.model_name_or_path=}")
+        peft_config = PeftConfig.from_pretrained(
+            model_args.model_name_or_path, revision=model_args.model_revision
+        )
+        model_kwargs = dict(
+            revision=model_args.base_model_revision,
+            trust_remote_code=model_args.trust_remote_code,
+            use_flash_attention_2=model_args.use_flash_attention_2,
+            torch_dtype=torch_dtype,
+            use_cache=False if training_args.gradient_checkpointing else True,
+            device_map=(
+                get_kbit_device_map() if quantization_config is not None else None
+            ),
+            quantization_config=quantization_config,
+        )
+        base_model = AutoModelForCausalLM.from_pretrained(
+            peft_config.base_model_name_or_path,
+            **model_kwargs,
+        )
+        model = PeftModel.from_pretrained(
+            base_model,
+            model_args.model_name_or_path,
+            revision=model_args.model_revision,
+        )
+        model_kwargs = None
 
-    training_args.model_init_kwargs = model_kwargs
+    ref_model = model
+    ref_model_kwargs = model_kwargs
+
+    if model_args.use_peft is True:
+        ref_model = None
+        ref_model_kwargs = None
+
     #########################
     # Instantiate SimPO trainer
     #########################
     trainer = SimPOTrainer(
         model=model,
+        ref_model=ref_model,  # pass in to bypass DPO Trainer check for ref model but is not actually used
+        model_init_kwargs=model_kwargs,
         args=training_args,
+        beta=training_args.beta,
         train_dataset=raw_datasets["train"],
         eval_dataset=raw_datasets["test"],
         tokenizer=tokenizer,
+        max_length=training_args.max_length,
+        max_prompt_length=training_args.max_prompt_length,
         peft_config=get_peft_config(model_args),
+        loss_type=training_args.loss_type,
     )
 
     ###############
